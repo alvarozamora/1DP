@@ -1,0 +1,39 @@
+import "regent" 
+local c     = regentlib.c
+local cmath = terralib.includec("math.h")
+
+fspace Fields
+{
+  a : double,
+  b : int8
+}
+
+
+
+task Main()
+  var N : int8 = 50  
+  var i0 = ispace(ptr, N)
+  var r = region(i0, Fields)
+  var p = partition(equal, r, ispace(int1d, 2))
+
+
+  for color in p.colors do
+    c.printf('Volume = %d\n', p[color].ispace.volume)
+    var id : int8 = 0 
+
+    var x0 = ptr(0)
+    var x1 = int1d(0) -- Index 0 in a 1-dimensional space.
+   
+    var wat = p[color][x0]
+
+    for e in p[color] do
+      e.b = id
+      c.printf("Check e  = %d\n", e.b)
+      id += 1
+    end
+    
+  end  
+end
+
+
+regentlib.start(Main)
