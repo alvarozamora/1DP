@@ -19,7 +19,7 @@ fspace particle
    --m : double,   
 }
 
--- Field space for collisions and ledger
+-- Field space for collision time ledgers
 fspace ledger
 {
   t : double,
@@ -72,16 +72,94 @@ do
   if (NL + NR) < N then
     NR += 1
   end
+
   for e in r_particles do
     if e < NL then
-      r_particles[e].x = uniform(data)*w
-      r_particles[e].vx = normal(data)*cmath.sqrt(TR)*L
+      r_particles[e].x = uniform(data)*(0.5/NL - D) + 0.5*[double](e)/double](NL)
+      r_particles[e].vx = normal(data)*cmath.sqrt(2*sod.PL/sod.pL)
     else
+      r_particles[e].x  =  uniform(data)*(0.5/NR - D) + 0.5*[double](e)/double](NR) + 0.5
+      r_particles[e].vx = normal(data)*cmath.sqrt(2*sod.PR/sod.pR)
 
     end
   end    
   return 1
 end
+
+
+task Fill_Local_Ledgers(r_ledger : region(ispace(int1d), ledger),
+               r_particles : region(ispace(int1d), particle),
+                N : int64, D : double)
+where 
+  reads writes (r_ledger),
+  reads (r_particles)
+do
+
+  for e in r_ledger do
+    var l : int1d = e - 1
+    var r : int1d = e
+
+    if l < 0 then 
+      var lx : double = -D/2
+      var lv : double = 0
+    else
+      var lx : double = r_particles[l].x
+      var lv : double = r_particles[l].vx
+    end
+
+    if r < N then
+      var rx : double = 1.0 + D/2
+      var rv : double = 0
+    else
+      var rx : double = r_particles[r].x
+      var rv : double = r_particles[r].vx
+    end
+
+    r_ledger[e].t = (rx - lx - D)/(lv - rv)
+  end
+end
+
+task Consolidate_Local_Ledgers(r_ledger : region(ispace(int1d), ledger),
+                r_top : region(ispace(int1d), ledger),
+                N : int64, D : double, K : int32)
+where 
+  reads writes (r_top),
+  reads (r_ledger)
+do
+  var k : int32 = 0
+  var top : double[K]
+  for e in r_ledger do
+    var continue : bool = true
+    
+    while continue do
+
+      -- If current time is shorter than top[k], stop while, push back all times, and set top[k] to current time
+      if r_ledger[e].t < top[k] then
+        -- Stop while
+        continue = false
+
+        -- Pushback Times
+        for j = k, K-1 do
+          var top_k : double = top[j+1]
+          top[j+1] = top[j]
+        end
+
+        -- Update
+        top[k] = r_ledger[e].t
+      end
+
+      -- Otherwise, continue
+      k += 1
+    end
+  end
+end
+
+task Update_Global_Ledger(global : region(ispace(int1d), ledger),
+                          local : region(ispace(int1d), ledger),
+                N : int64, D : double)
+where 
+  reads writes 
+
 
 terra dumpdouble(f : &c.FILE, val : double)
   var a : double[1]
@@ -103,21 +181,6 @@ terra dumpbool(f : &c.FILE, val : bool)
     a[0] = 0
   end
   c.fwrite(&a, 4, 1, f)
-end
-
-task factorize2d(parallelism : int) : int2d
-  var limit = [int](cmath.sqrt([double](parallelism)))
-  var size_x = 1
-  var size_y = parallelism
-  for i = 1, limit + 1 do
-    if parallelism % i == 0 then
-      size_x, size_y = i, parallelism / i
-      if size_x > size_y then
-        size_x, size_y = size_y, size_x
-      end
-    end
-  end
-  return int2d { size_x, size_y }
 end
 
 terra wait_for(x : int) return 1 end
@@ -375,75 +438,21 @@ terra MFT(s : double, n : double, T : double, L: double)
   return MFP(s,n)/cmath.sqrt(8/PI*T)/L
 end
 
-task Rayleigh(r_particles : region(ispace(int1d), particle), boxes : int32, L : double)
-where
-  reads (r_particles.{z,vy})
-do
-  var wallspeed : double = 0 
-  var npart : int32 = 0
- 
-  for e in r_particles do
-    if r_particles[e].z < L/boxes then
-      wallspeed += r_particles[e].vy
-      npart += 1
-    end
-  end
-  return wallspeed/npart
-end
-
-task Testing(r_particles : region(ispace(int1d), particle), boxes : int32, N : int32)
-where
-  reads (r_particles.{z,vy,vz,vx})
-do
-  -- First Moment
-  var x1 : double = 0
-  var y1 : double = 0
-  var z1 : double = 0
-
-  for p in r_particles do
-    x1 += r_particles[p].vz
-     --unfinished
-  end 
-
-end
 
 task toplevel()
   var config : Config
   config:initialize_from_command()
 
   -- Simulation Parameters
-  var n : double = 1e27          -- Initial Number Density
-  --var n : double = 1e27          -- Initial Number Density roughly for air at STP
-  --var s : double = 1.0         -- CrossSection Sigma 
-  var s : double = 2.7e-19       -- CrossSection Sigma h2 in mks
-  var l : double = MFP(s,n)      -- Mean Free Path
-  var boxes : int32 = 200         -- Number of Boxes
-  var L : double = boxes/2*l     -- Height of Box
-  var w : double = 1e6/cmath.sqrt(n*l)  -- X/Y Width of One Cell
-  var N : int32 = 1e6            -- Number of MC Particles
-  var Ne : double = n/(N/L/w/w)  -- Effective Particles per MC Particle
-  var TL : double = 1.0          -- Initial Temperature of Gas
-  var TR : double = 8.0/10.0     -- Initial Temperature of Gas
-  var pL : double = 1.0          -- Initial Density of Gas
-  var pR : double = 1.0/8.0      -- Initial Density of Gas
-  var Vc : double = L*w*w/boxes  -- Volume of Cell
-  var t  : double = MFT(s,n,TL,L)-- MFT 
-  var dt : double = t/2         -- Timestep
-  var maxiter : int32 = 50       -- Timesteps
-  var reals : int32 = config.last  -- Realizations
-  var start : int32 = config.start -- Resuming Point
+  var tf : double = 0.25           -- Final Time
+  var dt : double = t/2            -- Initial Timestep
   var out : bool = config.out      -- Output Boolean
 
-  c.printf("N = %d, %.5f Effective Number of Particles Per MC Particle\n", N, Ne)
-  c.printf("The Mean Free Path is %.15f, and the Mean Free Time is %.15f\n", l, t)
-  c.printf("Boxes = %d\n", boxes)
-  c.printf("Box Size = (%.20f, %.20f, %f)\n", w, w, L)
+  --c.printf("N = %d, %.5f\n", N, Ne)
 
-  var grid : int32 = start*10
-
-  -- Create a logical region for particles
+  -- Create a logical region for particles and ledgers
   var r_particles = region(ispace(int1d, N), particle)
-  var r_box = region(ispace(int1d, boxes), box) 
+  var r_ledger = region(ispace(int1d, boxes), box) 
 
   -- Create an equal partition of the particles
   var p_colors = ispace(int1d, boxes)
