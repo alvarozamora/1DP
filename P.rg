@@ -75,12 +75,11 @@ do
 
   for e in r_particles do
     if e < NL then
-      r_particles[e].x = uniform(data)*(0.5/NL - D) + 0.5*[double](e)/double](NL)
+      r_particles[e].x = uniform(data)*(0.5/NL - D) + 0.5*[double](e)/double](NL) + D/2
       r_particles[e].vx = normal(data)*cmath.sqrt(2*sod.PL/sod.pL)
     else
-      r_particles[e].x  =  uniform(data)*(0.5/NR - D) + 0.5*[double](e)/double](NR) + 0.5
+      r_particles[e].x  =  uniform(data)*(0.5/NR - D) + 0.5*[double](e)/double](NR) + 0.5 + D/2
       r_particles[e].vx = normal(data)*cmath.sqrt(2*sod.PR/sod.pR)
-
     end
   end    
   return 1
@@ -99,7 +98,7 @@ do
     var l : int1d = e - 1
     var r : int1d = e
 
-    if l < 0 then 
+    if l == -1 then 
       var lx : double = -D/2
       var lv : double = 0
     else
@@ -107,7 +106,7 @@ do
       var lv : double = r_particles[l].vx
     end
 
-    if r < N then
+    if r == N then
       var rx : double = 1.0 + D/2
       var rv : double = 0
     else
@@ -290,42 +289,6 @@ do
     r_particles[p].b = [int1d](r_particles[p].z/L*boxes)
     --c.printf("box = %d, r_particles[p].z = %f\n", r_particles[p].b, r_particles[p].z)
   end
-end
-
-task Vmax(r_particles: region(ispace(int1d), particle))
-where
-  reads (r_particles.{vx,vy,vz})
-do
-  var xmin : double = 1234567890
-  var xmax : double = 1234567890
-  var ymin : double = 1234567890
-  var ymax : double = 1234567890
-  var zmin : double = 1234567890
-  var zmax : double = 1234567890
-
-  for e in r_particles do
-    -- If initializing, or min/max criteria
-    if xmin == 1234567890 or xmin > r_particles[e].vx then
-      xmin = r_particles[e].vx
-    end
-    if xmax == 1234567890 or xmax < r_particles[e].vx then
-      xmax = r_particles[e].vx
-    end
-    if ymin == 1234567890 or ymin > r_particles[e].vy then
-      ymin = r_particles[e].vy
-    end
-    if ymax == 1234567890 or ymax < r_particles[e].vy then
-      ymax = r_particles[e].vy
-    end
-    if zmin == 1234567890 or zmin > r_particles[e].vz then
-      zmin = r_particles[e].vz
-    end
-    if zmax == 1234567890 or zmax < r_particles[e].vz then
-      zmax = r_particles[e].vz
-    end
-  end
-
-  return cmath.sqrt((xmax-xmin)*(xmax-xmin) + (ymax-ymin)*(ymax-ymin) + (zmax-zmin)*(zmax-zmin))
 end
 
 
