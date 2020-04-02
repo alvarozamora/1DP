@@ -25,6 +25,14 @@ fspace ledger
   t : double,
 }
 
+-- Field space for top ledgers
+fspace topledger
+{
+  t : double,
+  col : int1d,
+  p : int1d
+}
+
 terra uniform(data : &c.drand48_data)
   var flip : double[1]
   --c.srand48_r(c.legion_get_current_time_in_nanos(), data)
@@ -119,45 +127,86 @@ do
 end
 
 task Consolidate_Local_Ledgers(r_ledger : region(ispace(int1d), ledger),
-                r_top : region(ispace(int1d), ledger),
-                N : int64, D : double, K : int32)
+                r_top : region(ispace(int2d), topledger),
+                N : int64, D : double, K : int32, col: int1d)
 where 
   reads writes (r_top),
   reads (r_ledger)
 do
-  var k : int32 = 0
-  var top : double[K]
   for e in r_ledger do
     var continue : bool = true
-    
+    var k : int1d = col*K  
+  
     while continue do
 
       -- If current time is shorter than top[k], stop while, push back all times, and set top[k] to current time
-      if r_ledger[e].t < top[k] then
-        -- Stop while
+      if r_ledger[e].t < r_top[k].t then
+
+        -- Stop while loop
         continue = false
 
+        -- Temp Variable
+        var top : double = r_ledger[e].t
+
         -- Pushback Times
-        for j = k, K-1 do
-          var top_k : double = top[j+1]
-          top[j+1] = top[j]
+        for j = k, (col+1)*K do
+
+          -- Temp Variable
+          var top2 : double = r_top[j].t
+          r_top[j].t = top
+          top = top2
         end
 
-        -- Update
-        top[k] = r_ledger[e].t
+      -- Otherwise, continue
+      else
+        k += 1
       end
 
-      -- Otherwise, continue
-      k += 1
     end
   end
 end
 
-task Update_Global_Ledger(global : region(ispace(int1d), ledger),
-                          local : region(ispace(int1d), ledger),
-                N : int64, D : double)
+task Update_Global_Ledger(global : region(ispace(int1d), topledger),
+                          local : region(ispace(int1d), topledger),
+                N : int64, D : double, K : int32)
 where 
-  reads writes 
+  reads writes(global)
+  reads (local)
+do
+  for e in local do
+    var continue : bool = true
+    var k : int1d = 0
+  
+    while continue do
+
+      -- If current time is shorter than top[k], stop while, push back all times, and set top[k] to current time
+      if local[e].t < global[j].t then
+
+        -- Stop while loop
+        continue = false
+
+        -- Temp Variable
+        var top : double = local[e].t
+
+        -- Pushback Times
+        for j = k, (col+1)*K do
+
+          -- Temp Variable
+          var top2 : double = global[j].t
+          global[j].t = top
+          top = top2
+        end
+
+      -- Otherwise, continue
+      else
+        k += 1
+      end
+
+    end
+  end
+end
+
+task Collide
 
 
 terra dumpdouble(f : &c.FILE, val : double)
@@ -410,12 +459,16 @@ task toplevel()
   var tf : double = 0.25           -- Final Time
   var dt : double = t/2            -- Initial Timestep
   var out : bool = config.out      -- Output Boolean
+  var K : int32 = 1000             -- Number of top times, local
+  var N : int32 = 100              -- Number of top times, global
 
   --c.printf("N = %d, %.5f\n", N, Ne)
 
   -- Create a logical region for particles and ledgers
   var r_particles = region(ispace(int1d, N), particle)
-  var r_ledger = region(ispace(int1d, boxes), box) 
+  var r_ledger = region(ispace(int1d, N+1), ledger) 
+  var r_local = region(ispace(int1d, K), topledger)
+  var r_global = region(ispace(int1d, N), topledger)
 
   -- Create an equal partition of the particles
   var p_colors = ispace(int1d, boxes)
@@ -424,18 +477,17 @@ task toplevel()
 
   -- Create a region for random number generators
   var r_rng = region(p_colors, c.drand48_data[1])
-  var p_rng = partition(equal, r_rng, p_colors)
+  var p_rng = partition(equal, r_rng, p_colors )
 
   var token : int32 = 0
   var TS_start = c.legion_get_current_time_in_micros()   
-  __forbid(__parallel)
   var sim_start = c.legion_get_current_time_in_micros()
    
   -- Initialization 
   if rel == start then
     __demand(__parallel)
     for color in p_colors do
-      token += Initialize(p_particles[color],p_rng[color], color, boxes, TL, TR, pL, pR, L, w)
+      token += Initialize(p_particles[color], p_rng[color], color, boxes, TL, TR, pL, pR, L, w)
     end
   end
 
