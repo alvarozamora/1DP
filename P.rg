@@ -473,28 +473,32 @@ task toplevel()
   -- Create an equal partition of the particles
   var p_colors = ispace(int1d, boxes)
   var p_particles = partition(equal, r_particles, p_colors)
-  var p_box = partition(equal, r_box, p_colors)
+  var p_ledger = partition(equal, r_ledger, p_colors) 
+  var p_local = partition(equal, r_local, p_colors)
 
-  -- Create a region for random number generators
+  -- Create a halo partition of particles for ledger
+  var p_halo = 
+
+  -- Create a region and partition for random number generators
   var r_rng = region(p_colors, c.drand48_data[1])
-  var p_rng = partition(equal, r_rng, p_colors )
+  var p_rng = partition(equal, r_rng, p_colors)
 
   var token : int32 = 0
   var TS_start = c.legion_get_current_time_in_micros()   
   var sim_start = c.legion_get_current_time_in_micros()
    
-  -- Initialization 
-  if rel == start then
-    __demand(__parallel)
-    for color in p_colors do
-      token += Initialize(p_particles[color], p_rng[color], color, boxes, TL, TR, pL, pR, L, w)
-    end
+  -- Initialize Particles
+  for color in p_colors do
+    token += Initialize(p_particles[color], p_rng[color], color, boxes, TL, TR, pL, pR, L, w)
   end
 
-  -- Iterate for maxiter timesteps
-  var iter : int32 = 0
-  __forbid(__parallel)
-  for iter = 1, maxiter+1 do
+  -- Initialize Ledgers
+  for color in p_colors do
+    token += Fill_Local_Ledgers(p_ledger[],r_particles : region(ispace(int1d), particle), N : int64, D : double)
+
+
+  -- Main Loop
+  while t < Tf do
     __fence(__execution, __block)
     c.printf("Current Realization : %d, Current Iteration : %d\n", rel, iter)    
     -- Repartition based on Color Field
@@ -525,13 +529,6 @@ task toplevel()
     if (iter%(5)) == 0 and out then
       wait_for(token)
       c.printf("Dumped Grid %d\n", grid)
-    end
-
-    if iter == maxiter and rel < reals then
-      __demand(__parallel)
-      for color in p_colors do
-        token += initialize(p_particles[color],p_rng[color], color, boxes, TL, TR, pL, pR, L, w)
-      end
     end
   
     wait_for(token)
