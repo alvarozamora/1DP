@@ -420,13 +420,18 @@ task toplevel()
 
   var token : int32 = 0
   var TS_start = c.legion_get_current_time_in_micros()
-   
+  var start = double
+  var end = double
+
   -- Initialize Particles
+  __fence(__execution, __block)
+  start = c.legion_get_current_time_in_micros()
   for color in p_colors do
     token += Initialize(p_particles[color], p_rng[color], N, D, sod)
   end
   __fence(__execution, __block)
-  c.printf("Initialization Done\n")
+  end = c.legion_get_current_time_in_micros()
+  c.printf("Initialization Done in %.3e s\n", (end-start)*1e6)
 
   -- Initialize Ledgers
   for color in p_colors do
