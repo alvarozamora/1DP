@@ -87,10 +87,11 @@ do
       r_particles[e].vx = normal(data)*cmath.sqrt(2*sod.PL/sod.pL)
       r_particles[e].t = 0.0
     else
-      r_particles[e].x  =  uniform(data)*(0.5/NR - D) + 0.5*[double](e)/[double](NR) + 0.5 + D/2
+      r_particles[e].x = uniform(data)*(0.5/NR - D) + 0.5*[double](int64(e)-NL)/[double](NR) + 0.5 + D/2
       r_particles[e].vx = normal(data)*cmath.sqrt(2*sod.PR/sod.pR)
       r_particles[e].t = 0.0
     end
+    c.printf("Particle[%d] at x = %.5f with v = %.5f\n", e, r_particles[e].x, r_particles[e].vx)
   end    
   return 1
 end
@@ -420,37 +421,52 @@ task toplevel()
 
   var token : int32 = 0
   var TS_start = c.legion_get_current_time_in_micros()
-  var start = double
-  var end = double
+  var Start : double
+  var End : double
 
   -- Initialize Particles
   __fence(__execution, __block)
-  start = c.legion_get_current_time_in_micros()
+  Start = c.legion_get_current_time_in_micros()
   for color in p_colors do
     token += Initialize(p_particles[color], p_rng[color], N, D, sod)
   end
   __fence(__execution, __block)
-  end = c.legion_get_current_time_in_micros()
-  c.printf("Initialization Done in %.3e s\n", (end-start)*1e6)
+  End = c.legion_get_current_time_in_micros()
+  c.printf("Initialization Done in %.3e s\n", (End-Start)*1e-6)
 
   -- Initialize Ledgers
+  __fence(__execution, __block)
+  Start = c.legion_get_current_time_in_micros()
   for color in p_colors do
     token += Fill_Local_Ledgers(p_ledger[color], p_halo[color], N, D)
   end
   __fence(__execution, __block)
-  c.printf("Local Ledgers Done\n")
+  End = c.legion_get_current_time_in_micros()
+  c.printf("Local Ledgers Done in %.3e s\n", (End-Start)*1e-6)
 
   -- Initialize Local Ledgers
+  __fence(__execution, __block)
+  Start = c.legion_get_current_time_in_micros()
   for color in p_colors do
     token += Consolidate_Local_Ledgers(p_ledger[color], p_local[color], n, color)
   end
   __fence(__execution, __block)
-  c.printf("Local Top-n Ledgers Done\n")
-  
+  End = c.legion_get_current_time_in_micros()
+  c.printf("Local Top-n Ledgers Done in %.3e s\n", (End-Start)*1e-6)
+
+  __fence(__execution, __block)
+  Start = c.legion_get_current_time_in_micros()
   var count = Last_Time(r_local, k)
+  __fence(__execution, __block)
+  End = c.legion_get_current_time_in_micros()
+  c.printf("Final Count Done in %.3e s\n", (End-Start)*1e-6)
+
+  __fence(__execution, __block)
+  Start = c.legion_get_current_time_in_micros()
   Update_Global_Ledger(r_global, r_local, k, count)
   __fence(__execution, __block)
-  c.printf("Global Top-n Ledgers Done\n")
+  End = c.legion_get_current_time_in_micros()
+  c.printf("Global Top-n Ledgers Done in %.3e s\n", (End-Start)*1e-6)
 
   -- Main Loop
   --var t : double = 0
