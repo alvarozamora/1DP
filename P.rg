@@ -209,6 +209,32 @@ do
   end
 end
 
+task Next_Collision(r_local : region(ispace(int1d), topledger),
+                    r_last : region(ispace(int1d), topledger), col : int1d)
+where
+  reads(r_local),
+  reads writes (r_last)
+do
+  for e in r_local do
+    if r_local[e].t < min then
+      r_last[col].t = r_local[e].t
+      r_last[col].col = r_local[e].col
+      r_last[col].p = e
+    end      
+  end
+end
+
+task Collision(r_ledger : region(ispace(int1d), ledger),
+               r_particles : region(ispace(int1d), particle),
+               N : int64, D : double, e : int1d)
+where
+  reads writes (r_ledger),
+  reads (r_particles)
+do
+
+end
+
+
 
 terra dumpdouble(f : &c.FILE, val : double)
   var a : double[1]
@@ -326,21 +352,6 @@ do
       --Update Tsim Counter
       tsim += dt1
     end
-  end
-end
-
-task Next_Collision(r_local : region(ispace(int1d), topledger),
-                    r_last : region(ispace(int1d), topledger), col : int1d)
-where
-  reads(r_local),
-  reads writes (r_last)
-do
-  for e in r_local do
-    if r_local[e].t < min then
-      r_last[col].t = r_local[e].t
-      r_last[col].col = r_local[e].col
-      r_last[col].p = e
-    end      
   end
 end
 
