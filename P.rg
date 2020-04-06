@@ -2,6 +2,7 @@ import "regent"
 
 -- Helper modules to handle PNG files and command line arguments
 local Config = require("config")
+local coloring   = require("coloring_util")
 local Sod = require("sod")
 --local Dump = require("dump") -- TODO
 
@@ -61,7 +62,7 @@ end
 
 task Initialize(r_particles : region(ispace(int1d), particle),
                 r_rng : region(ispace(int1d), c.drand48_data[1]),
-                N : int64, D : double)
+                N : int64, D : double, sod: Sod)
 where
   reads writes(r_particles),
   reads writes(r_rng)
@@ -74,8 +75,6 @@ do
   c.srand48_r(c.legion_get_current_time_in_nanos(), data)
 
   -- Initialize Sod Shock Tube Problem
-  var sod : Sod
-  sod:initialize_parameters()
   var NL : int64 = N*(sod.pL/(sod.pL + sod.pR))
   var NR : int64 = N*(sod.pR/(sod.pL + sod.pR))
   if (NL + NR) < N then
@@ -83,7 +82,7 @@ do
   end
 
   for e in r_particles do
-    if e < NL then
+    if e < int1d(NL) then
       r_particles[e].x = uniform(data)*(0.5/NL - D) + 0.5*[double](e)/[double](NL) + D/2
       r_particles[e].vx = normal(data)*cmath.sqrt(2*sod.PL/sod.pL)
       r_particles[e].t = 0.0
@@ -109,38 +108,47 @@ do
     var l : int1d = e - 1
     var r : int1d = e
 
-    if l == -1 then 
-      var lx : double = -D/2
-      var lv : double = 0
+    var lx : double 
+    var lv : double 
+    if l == int1d(-1) then 
+      lx = -D/2
+      lv = 0
     else
-      var lx : double = r_particles[l].x - r_particles[r].vx*r_particles[r].t
-      var lv : double = r_particles[l].vx
+      lx = r_particles[l].x - r_particles[r].vx*r_particles[r].t
+      lv = r_particles[l].vx
     end
 
-    if r == N then
-      var rx : double = 1.0 + D/2
-      var rv : double = 0
+    var rx : double 
+    var rv : double 
+    if r == int1d(N) then
+      rx = 1.0 + D/2
+      rv = 0
     else
-      var rx : double = r_particles[r].x - r_particles[r].vx*r_particles[r].t
-      var rv : double = r_particles[r].vx
+      rx = r_particles[r].x - r_particles[r].vx*r_particles[r].t
+      rv = r_particles[r].vx
     end
 
     r_ledger[e].t = (rx - lx - D)/(lv - rv)
+    if r_ledger[e].t <= 0 then
+      r_ledger[e].t = 1e6
+    end
   end
+  return 1
 end
 
 task Consolidate_Local_Ledgers(r_ledger : region(ispace(int1d), ledger),
-                r_top : region(ispace(int2d), topledger),
-                K : int32, col: int1d)
+                r_top : region(ispace(int1d), topledger),
+                n : int32, col: int1d)
 where 
   reads writes (r_top),
   reads (r_ledger)
 do
+  fill(r_top.t, 1e6)
   for e in r_ledger do
     var continue : bool = true
-    var k : int1d = col*K  
+    var k : int1d = col*n
   
-    while continue do
+    while continue==true do
 
       -- If current time is shorter than top[k], stop while, push back all times, and set top[k] to current time
       if r_ledger[e].t < r_top[k].t then
@@ -152,7 +160,7 @@ do
         var top : double = r_ledger[e].t
 
         -- Pushback Times
-        for j = k, (col+1)*K do
+        for j = int32(k), int32((col+1)*n) do
 
           -- Temp Variable
           var top2 : double = r_top[j].t
@@ -167,23 +175,29 @@ do
 
     end
   end
+  return 1
 end
 
 task Update_Global_Ledger(r_global : region(ispace(int1d), topledger),
                           r_local : region(ispace(int1d), topledger),
-                          kp : int32, count : int32)
+                          k : int32, count : int32)
 where 
   reads writes(r_global),
   reads (r_local)
 do
+  fill(r_global.t, 1e6)
   for e in r_local do
     var continue : bool = true
     var idx : int1d = 0
-  
-    while continue do
+
+    if count < k then
+      k = count
+    end
+
+    while continue==true do
 
       -- If current time is shorter than top[idx], stop while, push back all times, and set top[idx] to current time
-      if r_local[e].t < r_global[j].t then
+      if r_local[e].t < r_global[idx].t then
 
         -- Stop while loop
         continue = false
@@ -192,7 +206,7 @@ do
         var top : double = r_local[e].t
 
         -- Pushback Times
-        for j = idx, count do
+        for j = int32(idx), k do
 
           -- Temp Variable
           var top2 : double = r_global[j].t
@@ -212,20 +226,20 @@ end
 
 task Last_Time(r_local : region(ispace(int1d), topledger), k : int32)
 where
-  reads(r_local),
+  reads(r_local)
 do
-  var min : double = 1e6
+  var Min : double = 1e6
   for e in r_local do
-    if (e%k==-1) then 
-      if r_local[e].t < min then
-        min = r_local[e].t
+    if (int32(e)%k==-1) then 
+      if r_local[e].t < Min then
+        Min = r_local[e].t
       end      
     end
   end
 
   var count : int32 = 0
   for e in r_local do
-    if r_local[e].t <= min then
+    if r_local[e].t <= Min then
       count += 1
     end      
   end
@@ -284,17 +298,17 @@ do
   var g = c.fopen(filename,'wb')
 
   for e in r_grid do
-    dumpdouble(g, r_grid[e].z)
+    --dumpdouble(g, r_grid[e].z)
   end
   __fence(__execution, __block)
   for e in r_grid do
-    dumpdouble(g, r_grid[e].vy)
+    --dumpdouble(g, r_grid[e].vy)
   end
   for e in r_grid do
-    dumpdouble(g, r_grid[e].vx)
+    --dumpdouble(g, r_grid[e].vx)
   end
   for e in r_grid do
-    dumpdouble(g, r_grid[e].vz)
+    --dumpdouble(g, r_grid[e].vz)
   end
   __fence(__execution, __block)
   c.fclose(g)
@@ -306,7 +320,7 @@ task Advect(r_particles : region(ispace(int1d), particle),
              r_rng : region(ispace(int1d), c.drand48_data[1]),
              L : double, w : double, dt : double)
 where
-  reads writes(r_particles.{x,y,z,vx,vy,vz}),
+  reads writes(r_particles.{x,vx}),
   reads writes(r_rng)
 do
   var data : &c.drand48_data
@@ -320,42 +334,31 @@ do
     while tsim < dt do
       var dt1 : double = (dt-tsim)
 
-      if r_particles[p].z + dt1*r_particles[p].vz < 0 then 
-        dt1 = (0 - r_particles[p].z)/r_particles[p].vz
-      elseif r_particles[p].z + dt1*r_particles[p].vz > L then
-        dt1 = (L - r_particles[p].z)/r_particles[p].vz
-      end        
+      --if r_particles[p].z + dt1*r_particles[p].vz < 0 then 
+      --  dt1 = (0 - r_particles[p].z)/r_particles[p].vz
+      --elseif r_particles[p].z + dt1*r_particles[p].vz > L then
+      --  dt1 = (L - r_particles[p].z)/r_particles[p].vz
+      --end        
     
       --Advect (either to wall or not)
       r_particles[p].x = r_particles[p].x + r_particles[p].vx*dt1
-      r_particles[p].y = r_particles[p].y + r_particles[p].vy*dt1
-      r_particles[p].z = r_particles[p].z + r_particles[p].vz*dt1
 
       --Periodic BC
       --while r_particles[p].x < 0 do
       --  r_particles[p].x = r_particles[p].x + 1.0*w
       --end
-      --while r_particles[p].y < 0 do
-      --  r_particles[p].y = r_particles[p].y + 1.0*w
-      --end
       --while r_particles[p].x > w do
       --  r_particles[p].x = r_particles[p].x - 1.0*w
-      --end
-      --while r_particles[p].y > w do
-      --  r_particles[p].y = r_particles[p].y - 1.0*w
       --end
 
       --Periodic BC
       if r_particles[p].x < 0 or r_particles[p].x > w then
         r_particles[p].x = cmath.fmod(r_particles[p].x, w)
       end
-      if r_particles[p].y < 0 or r_particles[p].y > w then
-        r_particles[p].y = cmath.fmod(r_particles[p].y, w)
-      end
       --Reflective BC
 
       if dt1 < dt-tsim then
-        r_particles[p].vz = -r_particles[p].vz
+        --r_particles[p].vz = -r_particles[p].vz
       end
       --Update Tsim Counter
       tsim += dt1
@@ -363,157 +366,38 @@ do
   end
 end
 
-    
-task Sort(r_particles : region(ispace(int1d), particle), boxes : int32, L : double)
-where 
-  reads (r_particles.z),
-  reads writes (r_particles.b)
-do
-  for p in r_particles do
-    r_particles[p].b = [int1d](r_particles[p].z/L*boxes)
-    --c.printf("box = %d, r_particles[p].z = %f\n", r_particles[p].b, r_particles[p].z)
-  end
-end
-
-
-task Collision(r_particles : region(ispace(int1d), particle),
-               r_rng : region(ispace(int1d), c.drand48_data[1]),
-               s: double, Ne : double, dt : double, Vc : double)
-where
-  reads writes(r_particles.{vx,vy,vz}),
-  reads writes(r_rng)--,
-  --exclusive(r_particles.{x,y,z,vx,vy,vz})
-do
-  var data : &c.drand48_data
-  for e in r_rng do
-    data = [&c.drand48_data](@e)
-  end
-
-  --Define Makeshift Hash Table
-  var lookup_table = region(ispace(int1d, r_particles.ispace.volume), int1d)
-  var next_id = 0
-  for i in r_particles do
-    lookup_table[next_id] = i
-    next_id += 1
-  end
-
-  --Compute Number of Collisions Required
-  var xmin : double = 1234567890
-  var xmax : double = 1234567890
-  var ymin : double = 1234567890
-  var ymax : double = 1234567890
-  var zmin : double = 1234567890
-  var zmax : double = 1234567890
-
-  for e in r_particles do
-    -- If initializing, or min/max criteria
-    if xmin == 1234567890 or xmin > r_particles[e].vx then
-      xmin = r_particles[e].vx
-    end
-    if xmax == 1234567890 or xmax < r_particles[e].vx then
-      xmax = r_particles[e].vx
-    end
-    if ymin == 1234567890 or ymin > r_particles[e].vy then
-      ymin = r_particles[e].vy
-    end
-    if ymax == 1234567890 or ymax < r_particles[e].vy then
-      ymax = r_particles[e].vy
-    end
-    if zmin == 1234567890 or zmin > r_particles[e].vz then
-      zmin = r_particles[e].vz
-    end
-    if zmax == 1234567890 or zmax < r_particles[e].vz then
-      zmax = r_particles[e].vz
-    end
-  end
-
-  var vmax : double = cmath.sqrt((xmax-xmin)*(xmax-xmin) + (ymax-ymin)*(ymax-ymin) + (zmax-zmin)*(zmax-zmin))
-
-  --var vmax : double = Vmax(r_particles)
-  var Nc : int32 = r_particles.ispace.volume
-  var Ncand : int64 = Nc*Nc*PI*s*s*vmax*Ne*dt/(2*Vc)
-  --c.printf("Nc = %d, Ncand = %d, vmax = %f, Ne = %f, dt = %f, Vc = %.30f\n", Nc, Ncand, vmax, Ne, dt, Vc)
-  if Ncand == 0 then
-    --c.printf("Number of Collision Candidates is zero!\n") 
-  end 
-
-  --Collide until Ncand
-  var ncol : int32 = 0
-  var ncand : int32 = 0
-  while ncand < Ncand do
-    --Update Counter
-    ncand += 1
-    
-    --c.printf("Candidate Total: %d, Candidates Selected:%d \n", Ncand, ncand)      
-
-    --Deviates for selecting particles
-    var u1 = int1d(uniform(data)*Nc)
-    var u2 = int1d(uniform(data)*Nc)
-    var i = lookup_table[u1]
-    var j = lookup_table[u2]
-    
-    --Accept or Reject based on Relative Velocity
-    var vrel : double = cmath.sqrt((r_particles[i].vx - r_particles[j].vx)*(r_particles[i].vx - r_particles[j].vx) + (r_particles[i].vy - r_particles[j].vy)*(r_particles[i].vy - r_particles[j].vy) + (r_particles[i].vz - r_particles[j].vz)*(r_particles[i].vz - r_particles[j].vz)) 
-    if vrel/vmax > uniform(data) then
-      
-
-      --Deviates for selecting angles
-      var a : double = 2*PI*uniform(data)  -- phi
-      var b : double = 2*uniform(data) - 1 -- cos(theta)
-    
-    
-      --Momentum Exchange
-      r_particles[i].vx = (r_particles[i].vx + r_particles[j].vx)/2 + vrel*cmath.sqrt(1-b*b)*cmath.cos(a)/2
-      r_particles[j].vx = (r_particles[i].vx + r_particles[j].vx)/2 - vrel*cmath.sqrt(1-b*b)*cmath.cos(a)/2
-
-      r_particles[i].vy = (r_particles[i].vy + r_particles[j].vy)/2 + vrel*cmath.sqrt(1-b*b)*cmath.sin(a)/2
-      r_particles[j].vy = (r_particles[i].vy + r_particles[j].vy)/2 - vrel*cmath.sqrt(1-b*b)*cmath.sin(a)/2
-
-      r_particles[i].vz = (r_particles[i].vz + r_particles[j].vz)/2 + vrel*b/2
-      r_particles[j].vz = (r_particles[i].vz + r_particles[j].vz)/2 - vrel*b/2
-    end
-  end
-  __fence(__execution, __block)
-  --c.printf("Collision is Done\n")
-end
-
-terra MFP(s : double, n : double)
-  return 1.0/(cmath.sqrt(2)*PI*s*s*n)
-end
-
-terra MFT(s : double, n : double, T : double, L: double)
-  return MFP(s,n)/cmath.sqrt(8/PI*T)/L
-end
-
-
 task toplevel()
   var config : Config
   config:initialize_from_command()
+  var sod : Sod
+  sod:initialize_parameters()
 
   -- Simulation Parameters
   var Tf : double = 0.25           -- Final Time
-  var dt : double = t/2            -- Initial Timestep
+  var dt : double = Tf/2            -- Initial Timestep
   var out : bool = config.out      -- Output Boolean
-  var N : int64 = 1e6              -- Particle Number
+  var N : int64 = 30              -- Particle Number
   var D : double = 1e-5/N          -- Particle Diameter
-  var k : int32 = 1000             -- Number of top times, local
-  var n : int32 = 100              -- Number of top times, global
+  var n : int32 = 10             -- Number of top times, local
+  var k : int32 = 2              -- Number of top times, global
 
   --c.printf("N = %d, %.5f\n", N, Ne)
 
   -- Create a logical region for particles and ledgers
   var r_particles = region(ispace(int1d, N), particle)
   var r_ledger = region(ispace(int1d, N+1), ledger) 
-  var r_local = region(ispace(int1d, k*config.cpus), topledger)
-  var r_last = region(ispace(int1d, config.cpus), topledger)
-  var r_global = region(ispace(int1d, n), topledger)
+  var r_local = region(ispace(int1d, n*config.p), topledger)
+  var r_global = region(ispace(int1d, k), topledger)
+  __fence(__execution, __block)
+  c.printf("Regions Created\n")
 
   -- Create an equal partition of the particles
-  var p_colors = ispace(int1d, boxes)
+  var p_colors = ispace(int1d, config.p)
   var p_particles = partition(equal, r_particles, p_colors)
   var p_ledger = partition(equal, r_ledger, p_colors)
   var p_local = partition(equal, r_local, p_colors)
-  var p_last = partition(equal, r_last, p_colors)
+  __fence(__execution, __block)
+  c.printf("Equal Partitions Created\n")
 
   -- Create a coloring for halo partition of particles for ledger
   var c_halo = coloring.create()
@@ -523,58 +407,81 @@ task toplevel()
     coloring.color_domain(c_halo, color, halo_bounds)
   end 
   --Create an aliased partition of particles using coloring for populating ledgers.
-  var p_halo = partition(aliased, r_particles, c_halo, p__colors)
+  var p_halo = partition(aliased, r_particles, c_halo, p_colors)
   coloring.destroy(c_halo)
+  __fence(__execution, __block)
+  c.printf("Halo Partition Created\n")
 
   -- Create a region and partition for random number generators
   var r_rng = region(p_colors, c.drand48_data[1])
   var p_rng = partition(equal, r_rng, p_colors)
+  __fence(__execution, __block)
+  c.printf("RNGs Initialized\n")
 
   var token : int32 = 0
   var TS_start = c.legion_get_current_time_in_micros()
    
   -- Initialize Particles
   for color in p_colors do
-    token += Initialize(p_particles[color], p_rng[color], N, D)
+    token += Initialize(p_particles[color], p_rng[color], N, D, sod)
   end
+  __fence(__execution, __block)
+  c.printf("Initialization Done\n")
 
   -- Initialize Ledgers
   for color in p_colors do
     token += Fill_Local_Ledgers(p_ledger[color], p_halo[color], N, D)
   end
+  __fence(__execution, __block)
+  c.printf("Local Ledgers Done\n")
 
   -- Initialize Local Ledgers
   for color in p_colors do
-    token += Consolidate_Local_Ledgers(p_ledger[color], p_local[color], k, color)
+    token += Consolidate_Local_Ledgers(p_ledger[color], p_local[color], n, color)
   end
+  __fence(__execution, __block)
+  c.printf("Local Top-n Ledgers Done\n")
   
   var count = Last_Time(r_local, k)
-  Update_Global_Ledger(r_global, r_local, k*config.cpus, count)
+  Update_Global_Ledger(r_global, r_local, k, count)
+  __fence(__execution, __block)
+  c.printf("Global Top-n Ledgers Done\n")
 
   -- Main Loop
-  var t : double = 0
-  while t < Tf do
+  --var t : double = 0
+  --while t < Tf do
 
     -- Collisions
-    __demand(__parallel)
-    for color in particles.colors do
-      Collision(particles[color], p_rng[color], s, Ne, dt, Vc)
+    --__demand(__index_launch)
+    for color in p_particles.colors do
+    --  Collision(r_particles[color], p_rng[color], s, Ne, dt, Vc)
     end
 
     -- Advect
-    __demand(__parallel)
-    for color in particles.colors do
-      Advect(particles[color], p_rng[color], L, w, dt)
+    --__demand(__index_launch)
+    for color in p_particles.colors do
+    --  Advect(particles[color], p_rng[color], L, w, dt)
     end
 
     
-  end
+  --end
 
   wait_for(token)
   var TS_end = c.legion_get_current_time_in_micros()
 
   wait_for(token)
   c.printf("Done\n")
+  -- Checking values
+  c.printf("Checking Values\n")
+  for e in r_ledger do
+    c.printf("t[%d] = %f\n", e, r_ledger[e].t)
+  end
+  for e in r_local do
+    c.printf("local_t[%d] = %f\n", e, r_local[e].t)
+  end
+  for e in r_global do
+    c.printf("global_t[%d] = %f\n", e, r_global[e].t)
+  end
   c.printf("Total time: %.6f sec.\n", (TS_end - TS_start) * 1e-6)
 
   --Dump(r_particles)
