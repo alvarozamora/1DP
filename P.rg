@@ -91,7 +91,7 @@ do
       r_particles[e].vx = normal(data)*cmath.sqrt(2*sod.PR/sod.pR)
       r_particles[e].t = 0.0
     end
-    c.printf("Particle[%d] at x = %.5f with v = %.5f\n", e, r_particles[e].x, r_particles[e].vx)
+    --c.printf("Particle[%d] at x = %.5f with v = %.5f\n", e, r_particles[e].x, r_particles[e].vx)
   end    
   return 1
 end
@@ -173,7 +173,9 @@ do
       else
         k += 1
       end
-
+      if k == (col+1)*n then
+        continue = false
+      end
     end
   end
   return 1
@@ -218,6 +220,9 @@ do
       -- Otherwise, continue
       else
         idx += 1
+        if idx == int1d(k) then
+          continue = false
+        end
       end
 
     end
@@ -231,19 +236,20 @@ where
 do
   var Min : double = 1e6
   for e in r_local do
-    if (int32(e)%k==-1) then 
+    if (int32(e)%k==(k-1)) then 
       if r_local[e].t < Min then
         Min = r_local[e].t
       end      
     end
   end
-
+  c.printf("Min = %.3e\n", Min)
   var count : int32 = 0
   for e in r_local do
     if r_local[e].t <= Min then
       count += 1
     end      
   end
+  c.printf("Count = %d\n", count)
   return count
 end
 
@@ -377,12 +383,12 @@ task toplevel()
   var Tf : double = 0.25           -- Final Time
   var dt : double = Tf/2            -- Initial Timestep
   var out : bool = config.out      -- Output Boolean
-  var N : int64 = 30              -- Particle Number
+  var N : int64 = 1e9              -- Particle Number
   var D : double = 1e-5/N          -- Particle Diameter
-  var n : int32 = 10             -- Number of top times, local
-  var k : int32 = 2              -- Number of top times, global
+  var n : int32 = 5             -- Number of top times, local
+  var k : int32 = 30              -- Number of top times, global
 
-  --c.printf("N = %d, %.5f\n", N, Ne)
+  c.printf("N = %d, D = %.3e\n", N, D)
 
   -- Create a logical region for particles and ledgers
   var r_particles = region(ispace(int1d, N), particle)
@@ -495,13 +501,13 @@ task toplevel()
   -- Checking values
   c.printf("Checking Values\n")
   for e in r_ledger do
-    c.printf("t[%d] = %f\n", e, r_ledger[e].t)
+    --c.printf("t[%d] = %f\n", e, r_ledger[e].t)
   end
   for e in r_local do
-    c.printf("local_t[%d] = %f\n", e, r_local[e].t)
+    c.printf("local_t[%d] = %.3e\n", e, r_local[e].t)
   end
   for e in r_global do
-    c.printf("global_t[%d] = %f\n", e, r_global[e].t)
+    c.printf("global_t[%d] = %.3e\n", e, r_global[e].t)
   end
   c.printf("Total time: %.6f sec.\n", (TS_end - TS_start) * 1e-6)
 
