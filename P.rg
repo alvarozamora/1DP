@@ -113,7 +113,7 @@ do
       var lx : double = -D/2
       var lv : double = 0
     else
-      var lx : double = r_particles[l].x
+      var lx : double = r_particles[l].x - r_particles[r].vx*r_particles[r].t
       var lv : double = r_particles[l].vx
     end
 
@@ -121,7 +121,7 @@ do
       var rx : double = 1.0 + D/2
       var rv : double = 0
     else
-      var rx : double = r_particles[r].x
+      var rx : double = r_particles[r].x - r_particles[r].vx*r_particles[r].t
       var rv : double = r_particles[r].vx
     end
 
