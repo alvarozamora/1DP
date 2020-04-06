@@ -83,10 +83,10 @@ do
 
   for e in r_particles do
     if e < NL then
-      r_particles[e].x = uniform(data)*(0.5/NL - D) + 0.5*[double](e)/[double](NL) + D/2
+      r_particles[e].x = uniform(data)*(0.5/NL - D) + 0.5*[double](e)/double](NL) + D/2
       r_particles[e].vx = normal(data)*cmath.sqrt(2*sod.PL/sod.pL)
     else
-      r_particles[e].x  =  uniform(data)*(0.5/NR - D) + 0.5*[double](e)/[double](NR) + 0.5 + D/2
+      r_particles[e].x  =  uniform(data)*(0.5/NR - D) + 0.5*[double](e)/double](NR) + 0.5 + D/2
       r_particles[e].vx = normal(data)*cmath.sqrt(2*sod.PR/sod.pR)
     end
   end    
@@ -128,7 +128,7 @@ end
 
 task Consolidate_Local_Ledgers(r_ledger : region(ispace(int1d), ledger),
                 r_top : region(ispace(int2d), topledger),
-                N : int64, D : double, K : int32, col: int1d)
+                K : int32, col: int1d)
 where 
   reads writes (r_top),
   reads (r_ledger)
@@ -166,34 +166,34 @@ do
   end
 end
 
-task Update_Global_Ledger(r_global : region(ispace(int1d), topledger),
-                          r_local : region(ispace(int1d), topledger),
+task Update_Global_Ledger(global : region(ispace(int1d), topledger),
+                          local : region(ispace(int1d), topledger),
                 N : int64, D : double, K : int32)
 where 
-  reads writes(r_global),
-  reads (r_local)
+  reads writes(global)
+  reads (local)
 do
-  for e in r_local do
+  for e in local do
     var continue : bool = true
     var k : int1d = 0
   
     while continue do
 
       -- If current time is shorter than top[k], stop while, push back all times, and set top[k] to current time
-      if r_local[e].t < r_global[j].t then
+      if local[e].t < global[j].t then
 
         -- Stop while loop
         continue = false
 
         -- Temp Variable
-        var top : double = r_local[e].t
+        var top : double = local[e].t
 
         -- Pushback Times
         for j = k, (col+1)*K do
 
           -- Temp Variable
-          var top2 : double = r_global[j].t
-          r_global[j].t = top
+          var top2 : double = global[j].t
+          global[j].t = top
           top = top2
         end
 
@@ -206,6 +206,7 @@ do
   end
 end
 
+task Collide
 
 
 terra dumpdouble(f : &c.FILE, val : double)
@@ -325,6 +326,14 @@ do
       tsim += dt1
     end
   end
+end
+
+task Next_Collision(local : region(ispace(int1d), topledger)),
+                    last : region(ispace(int1d), topledger))
+where
+  reads(global)
+do
+  for e in global
 end
 
     
@@ -455,54 +464,68 @@ task toplevel()
   config:initialize_from_command()
 
   -- Simulation Parameters
-  var tf : double = 0.25           -- Final Time
+  var Tf : double = 0.25           -- Final Time
   var dt : double = t/2            -- Initial Timestep
   var out : bool = config.out      -- Output Boolean
-  var K : int32 = 1000             -- Number of top times, local
-  var N : int32 = 100              -- Number of top times, global
+  var N : int64 = 1e6              -- Particle Number
+  var D : double = 1e-5/N          -- Particle Diameter
+  var k : int32 = 1000             -- Number of top times, local
+  var n : int32 = 100              -- Number of top times, global
 
   --c.printf("N = %d, %.5f\n", N, Ne)
 
   -- Create a logical region for particles and ledgers
   var r_particles = region(ispace(int1d, N), particle)
   var r_ledger = region(ispace(int1d, N+1), ledger) 
-  var r_local = region(ispace(int1d, K), topledger)
-  var r_global = region(ispace(int1d, N), topledger)
+  var r_local = region(ispace(int1d, k*config.cpus), topledger)
+  var r_last = region(ispace(int1d, config.cpus), topledger)
+  var r_global = region(ispace(int1d, n), topledger)
 
   -- Create an equal partition of the particles
   var p_colors = ispace(int1d, boxes)
   var p_particles = partition(equal, r_particles, p_colors)
-  var p_ledger = partition(equal, r_ledger, p_colors) 
+  var p_ledger = partition(equal, r_ledger, p_colors)
   var p_local = partition(equal, r_local, p_colors)
+  var p_last = partition(equal, r_last, p_colors)
 
-  -- Create a halo partition of particles for ledger
-  var p_halo = 
+  -- Create a coloring for halo partition of particles for ledger
+  var c_halo = coloring.create()
+  for color in p_colors do
+    var bounds = p_particles[color].bounds
+    var halo_bounds : rect1d = {bounds.lo - 1, bounds.hi + 1}
+    coloring.color_domain(c_halo, color, halo_bounds)
+  end 
+  --Create an aliased partition of particles using coloring for populating ledgers.
+  var p_halo = partition(aliased, r_particles, c_halo, p__colors)
+  coloring.destroy(c_halo)
 
   -- Create a region and partition for random number generators
   var r_rng = region(p_colors, c.drand48_data[1])
   var p_rng = partition(equal, r_rng, p_colors)
 
   var token : int32 = 0
-  var TS_start = c.legion_get_current_time_in_micros()   
-  var sim_start = c.legion_get_current_time_in_micros()
+  var TS_start = c.legion_get_current_time_in_micros()
    
   -- Initialize Particles
   for color in p_colors do
-    token += Initialize(p_particles[color], p_rng[color], color, boxes, TL, TR, pL, pR, L, w)
+    token += Initialize(p_particles[color], p_rng[color], N, D)
   end
 
   -- Initialize Ledgers
   for color in p_colors do
-    token += Fill_Local_Ledgers(p_ledger[],r_particles : region(ispace(int1d), particle), N : int64, D : double)
+    token += Fill_Local_Ledgers(p_ledger[color], p_halo[color], N, D)
+  end
 
+  -- Initialize Local Ledgers
+  for color in p_colors do
+    token += Consolidate_Local_Ledgers(p_ledger[color], p_local[color], k, color)
+  end
+  
 
   -- Main Loop
+  var t : double = 0
   while t < Tf do
-    __fence(__execution, __block)
-    c.printf("Current Realization : %d, Current Iteration : %d\n", rel, iter)    
-    -- Repartition based on Color Field
-    var particles = partition(r_particles.b, p_colors)  
-  
+
     -- Collisions
     __demand(__parallel)
     for color in particles.colors do
@@ -515,26 +538,10 @@ task toplevel()
       Advect(particles[color], p_rng[color], L, w, dt)
     end
 
-    -- Sort into Boxes
-    __demand(__parallel)
-    for color in particles.colors do
-      Sort(particles[color], boxes, L)
-    end
-
-    if (iter%(5)) == 0 and out then
-      grid += 1
-      token += Dump(r_particles, grid)
-    end
-    if (iter%(5)) == 0 and out then
-      wait_for(token)
-      c.printf("Dumped Grid %d\n", grid)
-    end
-  
-    wait_for(token)
-    var sim_end = c.legion_get_current_time_in_micros()
-    c.printf("Simulation took %.6f sec\n", (sim_end - sim_start)*1e-6) 
+    
   end
 
+  wait_for(token)
   var TS_end = c.legion_get_current_time_in_micros()
 
   wait_for(token)
