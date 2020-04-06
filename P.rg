@@ -209,8 +209,8 @@ do
   end
 end
 
-task Next_Collision(r_local : region(ispace(int1d), topledger),
-                    r_last : region(ispace(int1d), topledger), col : int1d)
+task Cutoff_Time(r_local : region(ispace(int1d), topledger),
+                 r_last : region(ispace(int1d), topledger), col : int1d)
 where
   reads(r_local),
   reads writes (r_last)
