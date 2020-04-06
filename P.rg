@@ -16,6 +16,7 @@ fspace particle
 {
    x  : double,
    vx : double,
+   t : double,
    --m : double,   
 }
 
@@ -85,9 +86,11 @@ do
     if e < NL then
       r_particles[e].x = uniform(data)*(0.5/NL - D) + 0.5*[double](e)/[double](NL) + D/2
       r_particles[e].vx = normal(data)*cmath.sqrt(2*sod.PL/sod.pL)
+      r_particles[e].t = 0.0
     else
       r_particles[e].x  =  uniform(data)*(0.5/NR - D) + 0.5*[double](e)/[double](NR) + 0.5 + D/2
       r_particles[e].vx = normal(data)*cmath.sqrt(2*sod.PR/sod.pR)
+      r_particles[e].t = 0.0
     end
   end    
   return 1
@@ -96,7 +99,7 @@ end
 
 task Fill_Local_Ledgers(r_ledger : region(ispace(int1d), ledger),
                r_particles : region(ispace(int1d), particle),
-                N : int64, D : double)
+               N : int64, D : double)
 where 
   reads writes (r_ledger),
   reads (r_particles)
