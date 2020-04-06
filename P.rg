@@ -83,10 +83,10 @@ do
 
   for e in r_particles do
     if e < NL then
-      r_particles[e].x = uniform(data)*(0.5/NL - D) + 0.5*[double](e)/double](NL) + D/2
+      r_particles[e].x = uniform(data)*(0.5/NL - D) + 0.5*[double](e)/[double](NL) + D/2
       r_particles[e].vx = normal(data)*cmath.sqrt(2*sod.PL/sod.pL)
     else
-      r_particles[e].x  =  uniform(data)*(0.5/NR - D) + 0.5*[double](e)/double](NR) + 0.5 + D/2
+      r_particles[e].x  =  uniform(data)*(0.5/NR - D) + 0.5*[double](e)/[double](NR) + 0.5 + D/2
       r_particles[e].vx = normal(data)*cmath.sqrt(2*sod.PR/sod.pR)
     end
   end    
@@ -166,34 +166,34 @@ do
   end
 end
 
-task Update_Global_Ledger(global : region(ispace(int1d), topledger),
-                          local : region(ispace(int1d), topledger),
+task Update_Global_Ledger(r_global : region(ispace(int1d), topledger),
+                          r_local : region(ispace(int1d), topledger),
                 N : int64, D : double, K : int32)
 where 
-  reads writes(global)
-  reads (local)
+  reads writes(r_global),
+  reads (r_local)
 do
-  for e in local do
+  for e in r_local do
     var continue : bool = true
     var k : int1d = 0
   
     while continue do
 
       -- If current time is shorter than top[k], stop while, push back all times, and set top[k] to current time
-      if local[e].t < global[j].t then
+      if r_local[e].t < r_global[j].t then
 
         -- Stop while loop
         continue = false
 
         -- Temp Variable
-        var top : double = local[e].t
+        var top : double = r_local[e].t
 
         -- Pushback Times
         for j = k, (col+1)*K do
 
           -- Temp Variable
-          var top2 : double = global[j].t
-          global[j].t = top
+          var top2 : double = r_global[j].t
+          r_global[j].t = top
           top = top2
         end
 
@@ -205,8 +205,6 @@ do
     end
   end
 end
-
-task Collide
 
 
 terra dumpdouble(f : &c.FILE, val : double)
@@ -328,12 +326,19 @@ do
   end
 end
 
-task Next_Collision(local : region(ispace(int1d), topledger)),
-                    last : region(ispace(int1d), topledger))
+task Next_Collision(r_local : region(ispace(int1d), topledger),
+                    r_last : region(ispace(int1d), topledger), col : int1d)
 where
-  reads(global)
+  reads(r_local),
+  reads writes (r_last)
 do
-  for e in global
+  for e in r_local do
+    if r_local[e].t < min then
+      r_last[col].t = r_local[e].t
+      r_last[col].col = r_local[e].col
+      r_last[col].p = e
+    end      
+  end
 end
 
     
