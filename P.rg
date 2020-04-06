@@ -171,18 +171,18 @@ end
 
 task Update_Global_Ledger(r_global : region(ispace(int1d), topledger),
                           r_local : region(ispace(int1d), topledger),
-                N : int64, D : double, K : int32)
+                          kp : int32, count : int32)
 where 
   reads writes(r_global),
   reads (r_local)
 do
   for e in r_local do
     var continue : bool = true
-    var k : int1d = 0
+    var idx : int1d = 0
   
     while continue do
 
-      -- If current time is shorter than top[k], stop while, push back all times, and set top[k] to current time
+      -- If current time is shorter than top[idx], stop while, push back all times, and set top[idx] to current time
       if r_local[e].t < r_global[j].t then
 
         -- Stop while loop
@@ -192,7 +192,7 @@ do
         var top : double = r_local[e].t
 
         -- Pushback Times
-        for j = k, (col+1)*K do
+        for j = idx, count do
 
           -- Temp Variable
           var top2 : double = r_global[j].t
@@ -202,26 +202,34 @@ do
 
       -- Otherwise, continue
       else
-        k += 1
+        idx += 1
       end
 
     end
   end
 end
 
-task Cutoff_Time(r_local : region(ispace(int1d), topledger),
-                 r_last : region(ispace(int1d), topledger), col : int1d)
+
+task Last_Time(r_local : region(ispace(int1d), topledger), k : int32)
 where
   reads(r_local),
-  reads writes (r_last)
 do
+  var min : double = 1e6
   for e in r_local do
-    if r_local[e].t < min then
-      r_last[col].t = r_local[e].t
-      r_last[col].col = r_local[e].col
-      r_last[col].p = e
+    if (e%k==-1) then 
+      if r_local[e].t < min then
+        min = r_local[e].t
+      end      
+    end
+  end
+
+  var count : int32 = 0
+  for e in r_local do
+    if r_local[e].t <= min then
+      count += 1
     end      
   end
+  return count
 end
 
 task Collision(r_ledger : region(ispace(int1d), ledger),
@@ -540,6 +548,8 @@ task toplevel()
     token += Consolidate_Local_Ledgers(p_ledger[color], p_local[color], k, color)
   end
   
+  var count = Last_Time(r_local, k)
+  Update_Global_Ledger(r_global, r_local, k*config.cpus, count)
 
   -- Main Loop
   var t : double = 0
