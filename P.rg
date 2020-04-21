@@ -145,6 +145,9 @@ where
   reads (r_ledger)
 do
   fill(r_top.t, 1e6)
+  fill(r_top.p, 1e6)
+  fill(r_top.c, 1e6)
+
   for e in r_ledger do
     var continue : bool = true
     var k : int1d = col*n
@@ -159,12 +162,17 @@ do
 
         -- Temp Variable
         var top : double = r_ledger[e].t
+        var topp : int1d = e
+        var topc : int1d = col
 
         -- Pushback Times
         for j = int32(k), int32((col+1)*n) do
 
           -- Temp Variable
           var top2 : double = r_top[j].t
+          var topp2 : double = r_top[j].p
+          var topc2 : double = r_top[j].c
+
           r_top[j].t = top
           top = top2
         end
@@ -207,14 +215,24 @@ do
 
         -- Temp Variable
         var top : double = r_local[e].t
+        var topp : int1d = r_local[e].p
+        var topc : int1d = r_local[e].c
 
         -- Pushback Times
         for j = int32(idx), k do
 
           -- Temp Variable
           var top2 : double = r_global[j].t
+          var topp2 : int1d = r_global[j].p
+          var topc2 : int1d = r_global[j].c
+
           r_global[j].t = top
+          r_global[j].p = topp
+          r_global[j].c = topc
+
           top = top2
+          topp = topp2
+          topc = topc2
         end
 
       -- Otherwise, continue
