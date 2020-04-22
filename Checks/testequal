@@ -1,0 +1,63 @@
+import "regent" 
+local c     = regentlib.c
+local cmath = terralib.includec("math.h")
+
+fspace Fields
+{
+  a : double,
+  b : int8
+}
+
+
+
+task Main()
+  -- 11, 13, 17, 19, 23
+  var N : int8 = 101
+  var Np : int8 = 11
+  var i0 = ispace(ptr, N)
+  var r = region(i0, Fields)
+  var p7 = partition(equal, r, ispace(int1d, 7))
+  var p11 = partition(equal, r, ispace(int1d, 11))
+  var p13 = partition(equal, r, ispace(int1d, 13))
+  var p17 = partition(equal, r, ispace(int1d, 17))
+  var p19 = partition(equal, r, ispace(int1d, 19))
+  var p23 = partition(equal, r, ispace(int1d, 23))
+
+  c.printf("Np = 7\n")
+  for color in p7.colors do 
+    c.printf('Volume[%d] = %d\n', color, p7[color].ispace.volume)
+  end  
+
+  __fence(__execution,__block)
+  c.printf("Np = 11\n")
+  for color in p11.colors do 
+    c.printf('Volume[%d] = %d\n', color, p11[color].ispace.volume)
+  end  
+
+  __fence(__execution,__block)
+  c.printf("Np = 13\n")
+  for color in p13.colors do 
+    c.printf('Volume[%d] = %d\n', color, p13[color].ispace.volume)
+  end  
+
+  __fence(__execution,__block)
+  c.printf("Np = 17\n")
+  for color in p17.colors do 
+    c.printf('Volume[%d] = %d\n', color, p17[color].ispace.volume)
+  end  
+
+  __fence(__execution,__block)
+  c.printf("Np = 19\n")
+  for color in p19.colors do 
+    c.printf('Volume[%d] = %d\n', color, p19[color].ispace.volume)
+  end  
+
+  __fence(__execution,__block)
+  c.printf("Np = 23\n")
+  for color in p23.colors do 
+    c.printf('Volume[%d] = %d\n', color, p23[color].ispace.volume)
+  end  
+end
+
+
+regentlib.start(Main)
