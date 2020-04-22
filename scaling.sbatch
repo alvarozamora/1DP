@@ -1,14 +1,14 @@
 #!/bin/bash
-#SBATCH --job-name=sod
-#SBATCH --output=sodo
-#SBATCH --error=sode
+#SBATCH --job-name=scale
+#SBATCH --output=scaleo
+#SBATCH --error=scalee
 #SBATCH --time=5:00:00
 #SBATCH -p iric
 #SBATCH -N 1
 #SBATCH --ntasks-per-node=16
 
 source ~/env.sh
-cd /scratch/PI/kipac/pizza/CS315b/Sod2/
+cd /scratch/PI/kipac/pizza/1DP
 
 regent P.rg -t 1 -o 1 -ll:cpu 15 -ll:csize 60000 -ll:util 0
 regent P.rg -t 2 -p 1 -o 1 -ll:cpu 15 -ll:csize 60000 -ll:util 0
