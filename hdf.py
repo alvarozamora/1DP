@@ -4,10 +4,11 @@ matplotlib.use("agg")
 import matplotlib.pyplot as plt
 import seaborn as sns
 import argparse
+import h5py
 sns.set_context("talk") #darkgrid, whitegrid, dark, white, ticks
 parser = argparse.ArgumentParser(description='HDF5 Initial Condition Pipeline')
-parser.add_argument('--file', type=str, help='file to hdf5-ify')
-
+parser.add_argument('--file', type=str, default='particle.h5', help='Output: hdf file name/path')
+parser.add_argument('-n', type=int, default=10**6, help='Particle Number')
 args = parser.parse_args()
 import pdb; pdb.set_trace()
 
@@ -123,5 +124,4 @@ plt.tight_layout()
 plt.savefig("PhaseSpace.png")
 
 
-import h5py
 Pdx = np.chunk(Pdx)
