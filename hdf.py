@@ -9,7 +9,7 @@ sns.set_context("talk") #darkgrid, whitegrid, dark, white, ticks
 parser = argparse.ArgumentParser(description='HDF5 Initial Condition Pipeline')
 parser.add_argument('--file', type=str, default='particle/particle', help='Output: hdf base file path/name')
 parser.add_argument('-n', type=int, default=10**6, help='Particle Number')
-parser.add_argument('-c', type=int, default=1, help='Number of cores/files')
+parser.add_argument('-c', type=int, default=2, help='Number of cores/files')
 args = parser.parse_args()
 #import pdb; pdb.set_trace()
 
@@ -130,7 +130,7 @@ vels = np.array_split(vels, args.c)
 parts = np.array([len(q) for q in Pdx]).astype(int)
 with h5py.File(args.file, 'w') as hdf:
 	hdf.create_dataset('n', data=parts)
-for p,q in enumerate(Pdx,1):
+for p,data in enumerate(Pdx):
 	with h5py.File(args.file+f'{p:03d}', 'w') as hdf:
-		hdf.create_dataset("dx", data=Pdx)
-		hdf.create_dataset("v", data=vels)
+		hdf.create_dataset("dx", data=data)
+		hdf.create_dataset("v", data=vels[p])
