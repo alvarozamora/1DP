@@ -10,6 +10,7 @@ parser = argparse.ArgumentParser(description='HDF5 Initial Condition Pipeline')
 parser.add_argument('--file', type=str, default='particle/particle', help='Output: hdf base file path/name')
 parser.add_argument('-n', type=int, default=10**6, help='Particle Number')
 parser.add_argument('-c', type=int, default=2, help='Number of cores/files')
+parser.add_argument('-b', type=int, default=0, help='Periodic (0), Reflective (1)')
 args = parser.parse_args()
 #import pdb; pdb.set_trace()
 
@@ -67,9 +68,15 @@ effbins = np.concatenate(effbins)
 bins = np.concatenate(bins)
 vels = np.concatenate(vels)
 uniforms = np.random.random(Np.sum())
-Pdx = effbins[1:]*uniforms[1:] - effbins[:-1]*uniforms[:-1] + bins[:-1]
-P0 = uniforms[0]*effbins[0] + D/2
-Pdx = np.append(np.array([P0]),Pdx)
+
+# Computing particle dx's
+if args.b == 0: #Periodic Boundary Conditions
+	Pdx = np.roll(effbins*uniforms, -1) - effbins*uniforms + bins
+	P0 = uniforms[0]*effbins[0] + D/2
+elif args.b == 1: #Reflective Boundary Conditions
+	Pdx = effbins[1:]*uniforms[1:] - effbins[:-1]*uniforms[:-1] + bins[:-1]
+	P0 = uniforms[0]*effbins[0] + D/2
+	Pdx = np.append(np.array([P0]),Pdx)
 P = np.cumsum(Pdx)
 MP = mp*np.arange(1,Np.sum())
 rhoP = mp/Pdx
@@ -130,6 +137,7 @@ vels = np.array_split(vels, args.c)
 parts = np.array([len(q) for q in Pdx]).astype(int)
 with h5py.File(args.file, 'w') as hdf:
 	hdf.create_dataset('n', data=parts)
+	hdf.create_dataset('P0', data=P0)
 for p,data in enumerate(Pdx):
 	with h5py.File(args.file+f'{p:03d}', 'w') as hdf:
 		hdf.create_dataset("dx", data=data)
