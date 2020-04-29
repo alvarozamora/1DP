@@ -69,7 +69,7 @@ task toplevel()
       Nb += r_meta[int1d(q)].n
     end
     c.printf("Nb[%d] = %d\n", e, Nb)
-    var p_bounds : rect1d = {Nb+1, Nb+1 + r_meta[e].n}
+    var p_bounds : rect1d = {Nb, Nb + r_meta[e].n-1}
     coloring.color_domain(c_particles, e, p_bounds)
   end
   var p_particles = partition(disjoint, r_particles, c_particles, ispace(int1d, cores))
