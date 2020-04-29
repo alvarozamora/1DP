@@ -132,17 +132,18 @@ plt.hist2d(P,vels,bins=(Nc,128), range = [[0,1],[-4,4]])
 plt.xlabel("Distance")
 plt.ylabel("Velocity")
 plt.title("Phase Space")
-plt.tight_layout()	
+plt.tight_layout()
 plt.savefig("PhaseSpace.png")
 
 #import pdb; pdb.set_trace()
 Pdx = np.array_split(Pdx, args.c)
 vels = np.array_split(vels, args.c)
 parts = np.array([len(q) for q in Pdx]).astype(int)
+print(f'Particle 1 : ({P0:.3e}. {v0:.3e})')
 with h5py.File(args.file, 'w') as hdf:
 	hdf.create_dataset('n', data=parts)
-	hdf.create_dataset('P0', data=P0)
-	hdf.create_dataset('v0', data=v0)
+	hdf.create_dataset('x', data=np.array([P0]))
+	hdf.create_dataset('v', data=np.array([v0]))
 for p,data in enumerate(Pdx):
 	with h5py.File(args.file+f'{p:03d}', 'w') as hdf:
 		hdf.create_dataset("dx", data=data)

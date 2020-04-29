@@ -19,6 +19,12 @@ fspace meta
   n : int64
 }
 
+fspace p1
+{
+  x : double,
+  v : double
+}
+
 fspace particle
 {
   dx : double,
@@ -42,21 +48,30 @@ where
   reads(r_data)
 do
   for e in r_data do
-    c.printf("r_data[%d].x = %f, r_data[%d].v = %f\n", e, r_data[e].dx, e, r_data[e].v)
+    --c.printf("r_data[%d].x = %f, r_data[%d].v = %f\n", e, r_data[e].dx, e, r_data[e].v)
   end
+end
+
+task firstparticle(r_data : region(ispace(int1d), p1))
+where
+  reads(r_data)
+do
+  c.printf("Particle 1 : {%.8e, %.8e}\n", r_data[0].x, r_data[0].v)  
 end
 
 task toplevel()
   var cores : int32 = 2
   
+  -- Read Meta Data
   var metafile = "particle/particle"
-  var r_meta = region(ispace(int1d, cores), meta)
-  --attach(hdf5, r_meta.n, metafile, regentlib.file_read_write)
-  
-  attach(hdf5, r_meta.n, metafile, regentlib.file_read_only)
+  var r_0 = region(ispace(int1d, 1), p1)
+  var r_meta = region(ispace(int1d, cores), meta)  
+  attach(hdf5, r_0.{x,v}, metafile, regentlib.file_read_write) 
+  attach(hdf5, r_meta.n, metafile, regentlib.file_read_write)
+  acquire(r_0)
   acquire(r_meta)
   var N : int64 = metavalues(r_meta)
-  __fence(__execution,__block)
+  firstparticle(r_0)
   release(r_meta)
   detach(hdf5, r_meta.n)
 
