@@ -7,7 +7,7 @@ import argparse
 import h5py
 sns.set_context("talk") #darkgrid, whitegrid, dark, white, ticks
 parser = argparse.ArgumentParser(description='HDF5 Initial Condition Pipeline')
-parser.add_argument('--file', type=str, default='particle/p', help='Output: hdf base file path/name')
+parser.add_argument('--file', type=str, default='particle/particle', help='Output: hdf base file path/name')
 parser.add_argument('-n', type=int, default=10**6, help='Particle Number')
 parser.add_argument('-c', type=int, default=1, help='Number of cores/files')
 args = parser.parse_args()
@@ -127,8 +127,10 @@ plt.savefig("PhaseSpace.png")
 #import pdb; pdb.set_trace()
 Pdx = np.array_split(Pdx, args.c)
 vels = np.array_split(vels, args.c)
+parts = np.array([len(q) for q in Pdx]).astype(int)
+with h5py.File(args.file, 'w') as hdf:
+	hdf.create_dataset('n', data=parts)
 for p,q in enumerate(Pdx,1):
-	Npartition = len(q)
-	with h5py.File(args.file+f'{p:03d}.hdf5', 'w') as hdf:
-		hdf.create_dataset("dx", (Npartition,), data=Pdx)
-		hdf.create_dataset("v", (Npartition,), data=vels)
+	with h5py.File(args.file+f'{p:03d}', 'w') as hdf:
+		hdf.create_dataset("dx", data=Pdx)
+		hdf.create_dataset("v", data=vels)
