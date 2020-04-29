@@ -72,9 +72,13 @@ uniforms = np.random.random(Np.sum())
 # Computing particle dx's
 if args.b == 0: #Periodic Boundary Conditions
 	Pdx = np.roll(effbins*uniforms, -1) - effbins*uniforms + bins
+	v0 = vels[0]
 	P0 = uniforms[0]*effbins[0] + D/2
-elif args.b == 1: #Reflective Boundary Conditions
+	import pdb; pdb.set_trace()
+	vels = np.roll(vels, -1) - vels
+elif args.b == 1: #Reflective Boundary Conditions #NEED TO FIX VELOCITY
 	Pdx = effbins[1:]*uniforms[1:] - effbins[:-1]*uniforms[:-1] + bins[:-1]
+	vels = np.roll(vels, -1) - vels
 	P0 = uniforms[0]*effbins[0] + D/2
 	Pdx = np.append(np.array([P0]),Pdx)
 P = np.cumsum(Pdx)
@@ -138,6 +142,7 @@ parts = np.array([len(q) for q in Pdx]).astype(int)
 with h5py.File(args.file, 'w') as hdf:
 	hdf.create_dataset('n', data=parts)
 	hdf.create_dataset('P0', data=P0)
+	hdf.create_dataset('v0', data=v0)
 for p,data in enumerate(Pdx):
 	with h5py.File(args.file+f'{p:03d}', 'w') as hdf:
 		hdf.create_dataset("dx", data=data)
