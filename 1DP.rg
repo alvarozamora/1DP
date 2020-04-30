@@ -442,7 +442,7 @@ task toplevel()
   __fence(__execution, __block)
   Start = c.legion_get_current_time_in_micros()
   for color in p_colors do
-    token += Initialize(p_particles[color], p_rng[color], N, D, sod)
+    
   end
   __fence(__execution, __block)
   End = c.legion_get_current_time_in_micros()
