@@ -22,7 +22,8 @@ fspace meta
 fspace p1
 {
   x : double,
-  v : double
+  v : double,
+  D : double
 }
 
 fspace particle
@@ -56,7 +57,7 @@ task firstparticle(r_data : region(ispace(int1d), p1))
 where
   reads(r_data)
 do
-  c.printf("Particle 1 : {%.8e, %.8e}\n", r_data[0].x, r_data[0].v)  
+  c.printf("Particle 1 : {%.4e, %.4e}, D = %.3e\n", r_data[0].x, r_data[0].v, r_data[0].D)  
 end
 
 task toplevel()
@@ -66,7 +67,7 @@ task toplevel()
   var metafile = "particle/particle"
   var r_0 = region(ispace(int1d, 1), p1)
   var r_meta = region(ispace(int1d, cores), meta)  
-  attach(hdf5, r_0.{x,v}, metafile, regentlib.file_read_write) 
+  attach(hdf5, r_0.{x,v,D}, metafile, regentlib.file_read_write) 
   attach(hdf5, r_meta.n, metafile, regentlib.file_read_write)
   acquire(r_0)
   acquire(r_meta)

@@ -144,6 +144,7 @@ with h5py.File(args.file, 'w') as hdf:
 	hdf.create_dataset('n', data=parts)
 	hdf.create_dataset('x', data=np.array([P0]))
 	hdf.create_dataset('v', data=np.array([v0]))
+	hdf.create_dataset('D', data=np.array([D]))
 for p,data in enumerate(Pdx):
 	with h5py.File(args.file+f'{p:03d}', 'w') as hdf:
 		hdf.create_dataset("dx", data=data)

@@ -13,12 +13,24 @@ local cmath = terralib.includec("math.h")
 local PI = cmath.M_PI
 
 -- Field space for particles
+fspace meta
+{
+  n : int64
+}
+
+fspace p1
+{
+  x : double,
+  v : double,
+  D : double
+}
+
 fspace particle
 {
-   x  : double,
-   vx : double,
-   t : double,
-   --m : double,   
+  dx : double,
+  v : double,
+  t : double
+  --m : double
 }
 
 -- Field space for collision time ledgers
@@ -34,68 +46,6 @@ fspace topledger
   col : int1d,
   p : int1d
 }
-
-terra uniform(data : &c.drand48_data)
-  var flip : double[1]
-  --c.srand48_r(c.legion_get_current_time_in_nanos(), data)
-  c.drand48_r(data, [&double](flip))
-  return flip[0]
-end
-
-terra normal(data : &c.drand48_data)
-  var U1 : double[1]
-  var U2 : double[1]
-  
-  --c.srand48_r(c.legion_get_current_time_in_nanos(), data)
-  c.drand48_r(data, [&double](U1))
-  c.drand48_r(data, [&double](U2))
- 
-  var g : double
-  g = cmath.sqrt(-2*cmath.log(U1[0]))*cmath.cos(2*PI*U2[0])
-
-  --var g : double[2]
-  --g[0] = sqrt(-2*cmath.log(U[0]))*cmath.cos(2*PI*U[1])
-  --g[1] = sqrt(-2*cmath.log(U[0]))*cmath.sin(2*PI*U[1])
-
-  return g
-end
-
-task Initialize(r_particles : region(ispace(int1d), particle),
-                r_rng : region(ispace(int1d), c.drand48_data[1]),
-                N : int64, D : double, sod: Sod)
-where
-  reads writes(r_particles),
-  reads writes(r_rng)
-do
-  -- Initialize Random Number Generator
-  var data : &c.drand48_data
-  for e in r_rng do
-    data = [&c.drand48_data](@e)
-  end
-  c.srand48_r(c.legion_get_current_time_in_nanos(), data)
-
-  -- Initialize Sod Shock Tube Problem
-  var NL : int64 = N*(sod.pL/(sod.pL + sod.pR))
-  var NR : int64 = N*(sod.pR/(sod.pL + sod.pR))
-  if (NL + NR) < N then
-    NR += 1
-  end
-
-  for e in r_particles do
-    if e < int1d(NL) then
-      r_particles[e].x = uniform(data)*(0.5/NL - D) + 0.5*[double](e)/[double](NL) + D/2
-      r_particles[e].vx = normal(data)*cmath.sqrt(2*sod.PL/sod.pL)
-      r_particles[e].t = 0.0
-    else
-      r_particles[e].x = uniform(data)*(0.5/NR - D) + 0.5*[double](int64(e)-NL)/[double](NR) + 0.5 + D/2
-      r_particles[e].vx = normal(data)*cmath.sqrt(2*sod.PR/sod.pR)
-      r_particles[e].t = 0.0
-    end
-    --c.printf("Particle[%d] at x = %.5f with v = %.5f\n", e, r_particles[e].x, r_particles[e].vx)
-  end    
-  return 1
-end
-
 
 task Fill_Local_Ledgers(r_ledger : region(ispace(int1d), ledger),
                r_particles : region(ispace(int1d), particle),
@@ -391,6 +341,20 @@ do
   end
 end
 
+
+task metavalues(r_meta : region(ispace(int1d), meta))
+where
+  reads(r_meta)
+do
+  var N : int64 = 0
+  for e in r_meta do
+    N += r_meta[e].n
+    c.printf("r_meta[%d].n = %d\n", e, r_meta[e].n)
+  end
+  return N
+end
+
+
 task toplevel()
   var config : Config
   config:initialize_from_command()
@@ -401,54 +365,80 @@ task toplevel()
   var Tf : double = 0.25           -- Final Time
   var dt : double = Tf/2            -- Initial Timestep
   var out : bool = config.out      -- Output Boolean
-  var N : int64 = 1e9              -- Particle Number
-  var D : double = 1e-5/N          -- Particle Diameter
+
+  -- Ledger Parameters
   var n : int32 = 5             -- Number of top times, local
   var k : int32 = 30              -- Number of top times, global
 
+  -- Load Metadata and Particle 1 (x,v)
+  var metafile = "particle/particle"
+  var r_0 = region(ispace(int1d, 1), p1)
+  var r_meta = region(ispace(int1d, config.p), meta)
+  attach(hdf5, r_0.{x,v,D}, metafile, regentlib.file_read_write)
+  attach(hdf5, r_meta.n, metafile, regentlib.file_read_write)
+  acquire(r_0)
+  acquire(r_meta)
+  var N : int64 = metavalues(r_meta)
+  var x0 : double = r_0[0].x
+  var v0 : double = r_0[0].v
+  var D : double = r_0[0].d
+  release(r_meta)
+  release(r_0)
   c.printf("N = %d, D = %.3e\n", N, D)
 
-  -- Create a logical region for particles and ledgers
+  -- Create a logical region for particles, metadata, and ledgers
   var r_particles = region(ispace(int1d, N), particle)
-  var r_ledger = region(ispace(int1d, N+1), ledger) 
+  var r_ledger = region(ispace(int1d, N), ledger)  -- Boundary Conditions: N for PBC, N+1 for RBC
   var r_local = region(ispace(int1d, n*config.p), topledger)
   var r_global = region(ispace(int1d, k), topledger)
   __fence(__execution, __block)
   c.printf("Regions Created\n")
 
-  -- Create an equal partition of the particles
+  -- Create coloring and particles partition based on metadata
+  var c_particles = coloring.create()
+  for e in r_meta do
+    var Nb : int64 = 0
+    var j : int32 = e
+    for q = 0, j do
+      Nb += r_meta[int1d(q)].n
+    end
+    c.printf("Nb[%d] = %d\n", e, Nb)
+    var p_bounds : rect1d = {Nb, Nb + r_meta[e].n-1}
+    coloring.color_domain(c_particles, e, p_bounds)
+  end
   var p_colors = ispace(int1d, config.p)
-  var p_particles = partition(equal, r_particles, p_colors)
-  var p_ledger = partition(equal, r_ledger, p_colors)
+  var p_particles = partition(disjoint, r_particles, c_particles, p_colors)
+  var p_ledger = partition(disjoint, r_ledger, c_particles, p_colors)
   var p_local = partition(equal, r_local, p_colors)
+
+
+  -- Create an equal partition of the particles
+  --var p_particles = partition(equal, r_particles, p_colors)
+  --var p_colors = ispace(int1d, config.p)
+  --var p_ledger = partition(equal, r_ledger, p_colors)
+  --var p_local = partition(equal, r_local, p_colors)
   __fence(__execution, __block)
-  c.printf("Equal Partitions Created\n")
+  --c.printf("Equal Partitions Created\n")
 
   -- Create a coloring for halo partition of particles for ledger
-  var c_halo = coloring.create()
-  for color in p_colors do
-    var bounds = p_particles[color].bounds
-    var halo_bounds : rect1d = {bounds.lo - 1, bounds.hi + 1}
-    coloring.color_domain(c_halo, color, halo_bounds)
-  end 
+  --var c_halo = coloring.create()
+  --for color in p_colors do
+  --  var bounds = p_particles[color].bounds
+  --  var halo_bounds : rect1d = {bounds.lo - 1, bounds.hi + 1}
+  --  coloring.color_domain(c_halo, color, halo_bounds)
+  --end 
   --Create an aliased partition of particles using coloring for populating ledgers.
-  var p_halo = partition(aliased, r_particles, c_halo, p_colors)
-  coloring.destroy(c_halo)
+  --var p_halo = partition(aliased, r_particles, c_halo, p_colors)
+  --coloring.destroy(c_halo)
   __fence(__execution, __block)
-  c.printf("Halo Partition Created\n")
-
-  -- Create a region and partition for random number generators
-  var r_rng = region(p_colors, c.drand48_data[1])
-  var p_rng = partition(equal, r_rng, p_colors)
-  __fence(__execution, __block)
-  c.printf("RNGs Initialized\n")
+  --c.printf("Halo Partition Created\n")
 
   var token : int32 = 0
   var TS_start = c.legion_get_current_time_in_micros()
   var Start : double
   var End : double
 
-  -- Initialize Particles
+  -- Load Particle Data
   __fence(__execution, __block)
   Start = c.legion_get_current_time_in_micros()
   for color in p_colors do
@@ -529,7 +519,10 @@ task toplevel()
   end
   c.printf("Total time: %.6f sec.\n", (TS_end - TS_start) * 1e-6)
 
+
   --Dump(r_particles)
+  detach(hdf5, r_meta.n)
+  detach(hdf5, r_0.{x,v,D})
 end
 
 regentlib.start(toplevel)
