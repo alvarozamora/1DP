@@ -23,6 +23,7 @@ fspace meta
 fspace particle
 {
   x : double,
+  xnew : double,
   v : double
 }
 
@@ -34,7 +35,7 @@ do
   var N : int64 = 0
   for e in r_meta do
     N += r_meta[e].n
-    c.printf("r_meta[%d].n = %d\n", e, r_meta[e].n)
+    --c.printf("r_meta[%d].n = %d\n", e, r_meta[e].n)
   end
   return N
 end
@@ -44,7 +45,16 @@ where
   reads(r_data)
 do
   for e in r_data do
-    --c.printf("r_data[%d].x = %f, r_data[%d].v = %f\n", e, r_data[e].dx, e, r_data[e].v)
+    --c.printf("r_data[%d].x = %f, r_data[%d].v = %f\n", e, r_data[e].x, e, r_data[e].v)
+  end
+end
+
+task advect(r_data : region(ispace(int1d), particle), t : double)
+where
+  reads writes(r_data)
+do
+  for e in r_data do
+    r_data[e].xnew = r_data[e].x + r_data[e].v*t
   end
 end
 
@@ -69,24 +79,22 @@ task toplevel()
     for q = 0, j do
       Nb += r_meta[int1d(q)].n
     end
-    c.printf("Nb[%d] = %d\n", e, Nb)
+    --c.printf("Nb[%d] = %d\n", e, Nb)
     var p_bounds : rect1d = {Nb, Nb + r_meta[e].n-1}
     coloring.color_domain(c_particles, e, p_bounds)
   end
   var p_particles = partition(disjoint, r_particles, c_particles, ispace(int1d, config.p))
-  --attach(hdf5, r_particles.{dx,v}, datafile, regentlib.file_read_only)
 
   for p in p_particles.colors do
     var datafile : int8[200]
     c.sprintf([&int8](datafile), 'particle/particle%03d',p)
 
-    attach(hdf5, (p_particles[p]).{dx,v}, datafile, regentlib.file_read_only)
+    attach(hdf5, (p_particles[p]).{x,v,xnew}, datafile, regentlib.file_read_write)
     acquire((p_particles[p]))
-    particledata(p_particles[p])
+    advect(p_particles[p], 1)
     release((p_particles[p]))
-    detach(hdf5, (p_particles[p]).{dx,v})
+    detach(hdf5, (p_particles[p]).{x,v,xnew})
   end
-  --detach(hdf5, r_particles.{dx,v})
   __fence(__execution,__block)
   c.printf("Done!\n")
 end
