@@ -7,6 +7,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import argparse
 import h5py
+import time
 
 sns.set_context("talk") #darkgrid, whitegrid, dark, white, ticks
 sns.set_style("white")
@@ -43,14 +44,19 @@ ntimes = 100
 Tf = 1.0
 times = np.linspace(Tf/ntimes, Tf, ntimes-1)
 
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+P = torch.from_numpy(P).to(device)
+vels = torch.from_numpy(vels).to(device) 
 for i in range(ntimes-1):
 	t = times[i]
 
-	Pnew = np.sort((P + vels*t)%1)
+	start = time.time()
+	Pnew = torch.sort((P + vels*t)%1)[0]
 	#pdb.set_trace()
-	Pdxnew = np.gradient(Pnew)
-	print(f"Advected to time {t:.3e}")
-	DumpDensity(Pdxnew, x, p, Pnew, Ns=10**6, fname=f'Output/Density{i+1:03d}.png')
+	Pdxnew = Pnew.roll(-1)-Pnew
+	end = time.time()
+	print(f"Advected to time {t:.3e} in {end-start:.3e} seconds")
+	DumpDensity(Pdxnew.cpu().numpy(), x, p, Pnew.cpu().numpy(), Ns=10**6, fname=f'Output/Density{i+1:03d}.png')
 
 
 
