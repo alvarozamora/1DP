@@ -8,13 +8,14 @@ import seaborn as sns
 import argparse
 import h5py
 import time
+import torch
 
 sns.set_context("talk") #darkgrid, whitegrid, dark, white, ticks
 sns.set_style("white")
 
 parser = argparse.ArgumentParser(description='HDF5 Initial Condition Pipeline')
 parser.add_argument('--file', type=str, default='particle/particle', help='Output: hdf base file path/name')
-parser.add_argument('-n', type=int, default=10**9, help='Particle Number')
+parser.add_argument('-n', type=int, default=10**8, help='Particle Number')
 parser.add_argument('-c', type=int, default=10**3, help='Number of cores/files')
 parser.add_argument('-b', type=int, default=0, help='Periodic (0), Reflective (1)')
 args = parser.parse_args()
@@ -34,28 +35,30 @@ Pressure = rho*c2                       # Pressure
 #ied = c2/(g-1)                         # Thermal Energy
 p = {'rho': rho, 'Pressure': Pressure, 'v': v, 'x': x}
 
+print("Generating Initial Conditions")
 P, Pdx, vels, P0, p = InitialConditions(x, rho, v, Pressure, args, p)
-#pdb.set_trace()
+print("Done")
 DumpDensity(Pdx, x, p, P)
 DumpPhaseSpace(P, vels, Nc)
+print("Initial Conditions Dumped")
 
-
-ntimes = 100
+ntimes = 400
 Tf = 1.0
 times = np.linspace(Tf/ntimes, Tf, ntimes-1)
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+print(f'Using {device}')
 P = torch.from_numpy(P).to(device)
-vels = torch.from_numpy(vels).to(device) 
+vels = torch.from_numpy(vels).to(device)
 for i in range(ntimes-1):
 	t = times[i]
 
 	start = time.time()
 	Pnew = torch.sort((P + vels*t)%1)[0]
-	#pdb.set_trace()
 	Pdxnew = Pnew.roll(-1)-Pnew
+	Pdxnew[-1] += 1
 	end = time.time()
-	print(f"Advected to time {t:.3e} in {end-start:.3e} seconds")
+	print(f"Advected to time {t:.3f} in {end-start:.3e} seconds")
 	DumpDensity(Pdxnew.cpu().numpy(), x, p, Pnew.cpu().numpy(), Ns=10**6, fname=f'Output/Density{i+1:03d}.png')
 
 
