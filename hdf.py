@@ -8,8 +8,8 @@ import h5py
 sns.set_context("talk") #darkgrid, whitegrid, dark, white, ticks
 parser = argparse.ArgumentParser(description='HDF5 Initial Condition Pipeline')
 parser.add_argument('--file', type=str, default='particle/particle', help='Output: hdf base file path/name')
-parser.add_argument('-n', type=int, default=10**6, help='Particle Number')
-parser.add_argument('-c', type=int, default=2, help='Number of cores/files')
+parser.add_argument('-n', type=int, default=10**9, help='Particle Number')
+parser.add_argument('-c', type=int, default=10**3, help='Number of cores/files')
 parser.add_argument('-b', type=int, default=0, help='Periodic (0), Reflective (1)')
 args = parser.parse_args()
 #import pdb; pdb.set_trace()
@@ -26,14 +26,14 @@ Nc = 512                                # Number of Cells
 x = np.linspace(0+1/Nc/2,1-1/Nc/2,Nc)   # Grid Centers on (0,1)
 v = delta*np.sin(4*np.pi*x)             # Bulk Velocity
 rho = 1 - v                             # Density  
-P = rho*c2                              # Pressure
+Pressure = rho*c2                              # Pressure
 #ied = c2/(g-1)                          # Thermal Energy
 dx = np.gradient(x)                     # Cell Sizes (UNIFORM GRID ONLY)
 M = (rho*dx).sum()                      # Total Mass (UNIFORM GRID ONLY)
 
 
 # Particle Parameters
-N = 10**6                         # Approximate number of particles
+N = args.n                         # Approximate number of particles
 mp = M/N                         # Particle Mass
 # Final number of particles per cell, total
 Np = np.floor((rho*dx)/mp + np.random.uniform(size=rho.size)).astype(int)
@@ -43,7 +43,7 @@ Dmax = (dx/Np).min()
 D = 1e-4*Dmax
 
 #Initialize Velocities
-s = np.sqrt(2*P/rho)
+s = np.sqrt(2*Pressure/rho)
 
 
 # bin and effbin sizes
@@ -74,7 +74,6 @@ if args.b == 0: #Periodic Boundary Conditions
 	Pdx = np.roll(effbins*uniforms, -1) - effbins*uniforms + bins
 	v0 = vels[0]
 	P0 = uniforms[0]*effbins[0] + D/2
-	import pdb; pdb.set_trace()
 	vels = np.roll(vels, -1) - vels
 elif args.b == 1: #Reflective Boundary Conditions #NEED TO FIX VELOCITY
 	Pdx = effbins[1:]*uniforms[1:] - effbins[:-1]*uniforms[:-1] + bins[:-1]
@@ -136,6 +135,7 @@ plt.tight_layout()
 plt.savefig("PhaseSpace.png")
 
 #import pdb; pdb.set_trace()
+P = np.array_split(P, args.c)
 Pdx = np.array_split(Pdx, args.c)
 vels = np.array_split(vels, args.c)
 parts = np.array([len(q) for q in Pdx]).astype(int)
@@ -145,7 +145,14 @@ with h5py.File(args.file, 'w') as hdf:
 	hdf.create_dataset('x', data=np.array([P0]))
 	hdf.create_dataset('v', data=np.array([v0]))
 	hdf.create_dataset('D', data=np.array([D]))
+	hdf.create_dataset('Nc', data=np.array([Nc]))
+	hdf.create_dataset('xgrid', data=x)
+	hdf.create_dataset('rhogrid', data=rho)
+	hdf.create_dataset('vgrid', data=v)
+	hdf.create_dataset('Pgrid', data=Pressure)
 for p,data in enumerate(Pdx):
 	with h5py.File(args.file+f'{p:03d}', 'w') as hdf:
 		hdf.create_dataset("dx", data=data)
 		hdf.create_dataset("v", data=vels[p])
+		hdf.create_dataset("x", data=P[p])
+		hdf.create_dataset("xnew", data=P[p])
