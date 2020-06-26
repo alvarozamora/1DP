@@ -16,7 +16,7 @@ hdf5.H5P_DEFAULT = 0
 
 fspace meta
 {
-  n : int64
+  Np : int64
 }
 
 fspace p1
@@ -28,7 +28,7 @@ fspace p1
 
 fspace particle
 {
-  dx : double,
+  x : double,
   v : double
 }
 
@@ -38,8 +38,8 @@ where
 do
   var N : int64 = 0
   for e in r_meta do
-    N += r_meta[e].n
-    c.printf("r_meta[%d].n = %d\n", e, r_meta[e].n)
+    N += r_meta[e].Np
+    c.printf("r_meta[%d].Np = %d\n", e, r_meta[e].Np)
   end
   return N
 end
@@ -49,7 +49,7 @@ where
   reads(r_data)
 do
   for e in r_data do
-    --c.printf("r_data[%d].x = %f, r_data[%d].v = %f\n", e, r_data[e].dx, e, r_data[e].v)
+    c.printf("r_data[%d].x = %f, r_data[%d].v = %f\n", e, r_data[e].x, e, r_data[e].v)
   end
 end
 
@@ -65,16 +65,16 @@ task toplevel()
   
   -- Read Meta Data
   var metafile = "particle/particle"
-  var r_0 = region(ispace(int1d, 1), p1)
+  --var r_0 = region(ispace(int1d, 1), p1)
   var r_meta = region(ispace(int1d, cores), meta)  
-  attach(hdf5, r_0.{x,v,D}, metafile, regentlib.file_read_write) 
-  attach(hdf5, r_meta.n, metafile, regentlib.file_read_write)
-  acquire(r_0)
+  --attach(hdf5, r_0.{x,v,D}, metafile, regentlib.file_read_write) 
+  attach(hdf5, r_meta.Np, metafile, regentlib.file_read_write)
+  --acquire(r_0)
   acquire(r_meta)
   var N : int64 = metavalues(r_meta)
-  firstparticle(r_0)
+  --firstparticle(r_0)
   release(r_meta)
-  detach(hdf5, r_meta.n)
+  detach(hdf5, r_meta.Np)
 
   var r_particles = region(ispace(int1d, N), particle)
   var c_particles = coloring.create()
@@ -82,26 +82,26 @@ task toplevel()
     var Nb : int64 = 0
     var j : int32 = e
     for q = 0, j do
-      Nb += r_meta[int1d(q)].n
+      Nb += r_meta[int1d(q)].Np
     end
     c.printf("Nb[%d] = %d\n", e, Nb)
-    var p_bounds : rect1d = {Nb, Nb + r_meta[e].n-1}
+    var p_bounds : rect1d = {Nb, Nb + r_meta[e].Np-1}
     coloring.color_domain(c_particles, e, p_bounds)
   end
   var p_particles = partition(disjoint, r_particles, c_particles, ispace(int1d, cores))
-  --attach(hdf5, r_particles.{dx,v}, datafile, regentlib.file_read_only)
+  --attach(hdf5, r_particles.{x,v}, datafile, regentlib.file_read_only)
 
   for p in p_particles.colors do
     var datafile : int8[200]
     c.sprintf([&int8](datafile), 'particle/particle%03d',p)
 
-    attach(hdf5, (p_particles[p]).{dx,v}, datafile, regentlib.file_read_only)
+    attach(hdf5, (p_particles[p]).{x,v}, datafile, regentlib.file_read_only)
     acquire((p_particles[p]))
     particledata(p_particles[p])
     release((p_particles[p]))
-    detach(hdf5, (p_particles[p]).{dx,v})
+    detach(hdf5, (p_particles[p]).{x,v})
   end
-  --detach(hdf5, r_particles.{dx,v})
+  --detach(hdf5, r_particles.{x,v})
 end
 
 regentlib.start(toplevel)
